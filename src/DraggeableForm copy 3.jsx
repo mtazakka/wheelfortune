@@ -5,10 +5,6 @@ import { FaTrophy } from 'react-icons/fa';
 import Fuse from 'fuse.js';
 import Confetti from 'react-confetti';
 
-// Import local audio files
-import spinSoundFile from './assets/spin-sound.mp3';
-import winSoundFile from './assets/win-sound.mp3';
-
 // MUI imports
 import { Box, TextField, Button, List, ListItem, ListItemText, Typography, Dialog, DialogTitle, DialogContent, DialogActions, Paper, IconButton, Tooltip, AppBar, Toolbar, createTheme, ThemeProvider, InputBase } from "@mui/material";
 import { styled } from '@mui/material/styles';
@@ -33,11 +29,16 @@ const theme = createTheme({
     },
     typography: {
         fontFamily: 'Roboto, sans-serif',
-        h5: { fontWeight: 700 },
-        h6: { fontWeight: 700 },
+        h5: {
+            fontWeight: 700,
+        },
+        h6: {
+            fontWeight: 700,
+        },
     },
 });
 
+// Styled component for the editable title
 const StyledInputBase = styled(InputBase)(({ theme }) => ({
     color: 'inherit',
     '& .MuiInputBase-input': {
@@ -73,15 +74,15 @@ const FormularioTexto = () => {
     const [isPanelHidden, setIsPanelHidden] = useState(false);
 
     const tournamentState = useRef(null);
-    const spinSound = useRef(new Audio(spinSoundFile));
-    const winSound = useRef(new Audio(winSoundFile));
+    const spinSound = useRef(new Audio('https://actions.google.com/sounds/v1/household/clock_ticking.ogg'));
+    const winSound = useRef(new Audio('https://actions.google.com/sounds/v1/cartoon/magic_chime.ogg'));
     
-    // useEffect(() => {
-    //     if (showConfetti) {
-    //         const timer = setTimeout(() => setShowConfetti(false), 6000);
-    //         return () => clearTimeout(timer);
-    //     }
-    // }, [showConfetti]);
+    useEffect(() => {
+        if (showConfetti) {
+            const timer = setTimeout(() => setShowConfetti(false), 6000);
+            return () => clearTimeout(timer);
+        }
+    }, [showConfetti]);
 
     useEffect(() => {
         spinSound.current.loop = true;
@@ -94,9 +95,13 @@ const FormularioTexto = () => {
 
     const handleFullscreen = () => {
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().then(() => setIsFullscreen(true));
+            document.documentElement.requestFullscreen();
+            setIsFullscreen(true);
         } else {
-            document.exitFullscreen().then(() => setIsFullscreen(false));
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+                setIsFullscreen(false);
+            }
         }
     };
 
@@ -114,9 +119,7 @@ const FormularioTexto = () => {
         const baseSize = Math.floor(teams / numGroups);
         const remainder = teams % numGroups;
         const newGroups = Array.from({ length: numGroups }, (_, i) => ({
-            id: String.fromCharCode(65 + i),
-            capacity: baseSize + (i < remainder ? 1 : 0),
-            items: [],
+            id: String.fromCharCode(65 + i), capacity: baseSize + (i < remainder ? 1 : 0), items: [],
         }));
         setGroups(newGroups);
         setCurrentGroupIndex(0);
@@ -127,9 +130,10 @@ const FormularioTexto = () => {
             tournamentState.current = {
                 rules: {
                     cTeams: ["King Kaban", "West Bay", "Jabar Kahiji"],
-                    separatedTeams: ["K'jak Roar", "Soetta Jawara", "Headquarters"],
+                    separatedTeams: ["K'JAK ROAR", "Soetta Jawaraaaaaa!!", "HEADQUARTERS"],
                 },
-                assignments: {}, groupCounters: { A: 0, B: 0, C: 0, D: 0 },
+                assignments: {}, // { canonicalName: groupId }
+                groupCounters: { A: 0, B: 0, C: 0, D: 0 },
             };
         }
     };
@@ -140,11 +144,12 @@ const FormularioTexto = () => {
         const turnNumber = state.groupCounters[targetGroupId];
 
         const findFuzzy = (name) => {
+            if (!name) return null;
             const fuse = new Fuse(inputList, { threshold: 0.4 });
             return fuse.search(name)[0]?.item;
         };
 
-        // Rule for Group C based on its turn number
+        // Rule for Group C
         if (targetGroupId === 'C') {
             const requiredTeamName = state.rules.cTeams[turnNumber];
             const winner = findFuzzy(requiredTeamName);
@@ -152,42 +157,50 @@ const FormularioTexto = () => {
         }
 
         // Rule for Separated Teams
-        const unassignedSeparated = state.rules.separatedTeams
-            .filter(t => !Object.keys(state.assignments).includes(t))
-            .map(t => findFuzzy(t)).filter(Boolean);
+        // Find canonical names of separated teams that have NOT been assigned yet
+        const unassignedSeparatedNames = state.rules.separatedTeams
+            .filter(canonicalName => !state.assignments[canonicalName]);
+        
+        // Find which of those unassigned teams are currently in the inputList
+        const availableUnassignedSeparated = unassignedSeparatedNames
+            .map(name => findFuzzy(name)).filter(Boolean);
 
-        if (unassignedSeparated.length > 0 && ['A', 'B', 'D'].includes(targetGroupId)) {
+        if (availableUnassignedSeparated.length > 0 && ['A', 'B', 'D'].includes(targetGroupId)) {
             const assignedSeparatedGroups = Object.values(state.assignments);
             if (!assignedSeparatedGroups.includes(targetGroupId)) {
-                return unassignedSeparated[0];
+                return availableUnassignedSeparated[0];
             }
         }
         
         // Default: Pick a "regular" team if possible
         const allSpecialTeams = [...state.rules.cTeams, ...state.rules.separatedTeams];
         const regularTeams = inputList.filter(item => {
-            const fuse = new Fuse(allSpecialTeams, { threshold: 0.4 });
+            const fuse = new Fuse(allSpecialTeams, { threshold: 0.4, getFn: (team) => team });
             return fuse.search(item).length === 0;
         });
 
         if (regularTeams.length > 0) return regularTeams[0];
         
-        // Fallback: Pick any available team that doesn't break a major rule
+        // Fallback: Pick any available team that won't break a rule
+        // This is a complex fallback, for now we just pick the first available
         return inputList[0];
     };
 
+
     const handleSpinClick = () => {
         if (inputList.length === 0) return;
-        
         let prizeIdx;
         if (isTournamentMode) {
             const winner = determineNextWinner();
+            if (!winner) {
+                alert("Could not determine a valid next winner based on the rules and the current list. Please check your list.");
+                return;
+            }
             prizeIdx = inputList.findIndex(item => item === winner);
             if(prizeIdx === -1) prizeIdx = 0; // Safety fallback
         } else {
             prizeIdx = Math.floor(Math.random() * inputList.length);
         }
-
         setPrizeNumber(prizeIdx);
         setMustSpin(true);
         spinSound.current.play();
@@ -197,7 +210,7 @@ const FormularioTexto = () => {
         spinSound.current.pause();
         spinSound.current.currentTime = 0;
         winSound.current.play();
-        // setShowConfetti(true);
+        setShowConfetti(true);
         if (inputList.length > 0 && inputList[prizeNumber] !== undefined) {
             setSelectedItem(inputList[prizeNumber]);
             setShowPopup(true);
@@ -214,15 +227,20 @@ const FormularioTexto = () => {
         const newGroups = [...groups];
         const targetGroup = newGroups[currentGroupIndex];
         if (targetGroup) targetGroup.items.push(selectedItem);
+        
         if (isTournamentMode) {
             const state = tournamentState.current;
             state.groupCounters[targetGroup.id]++;
-            const fuse = new Fuse(state.rules.separatedTeams, { threshold: 0.4 });
-            if (fuse.search(selectedItem).length > 0) {
-                const matchedName = fuse.search(selectedItem)[0].item;
-                state.assignments[matchedName] = targetGroup.id;
+            
+            // Use fuse to find the CANONICAL name of the selected item to track it
+            const fuse = new Fuse(state.rules.separatedTeams);
+            const searchResult = fuse.search(selectedItem);
+            if (searchResult.length > 0) {
+                const matchedCanonicalName = searchResult[0].item;
+                state.assignments[matchedCanonicalName] = targetGroup.id;
             }
         }
+        
         setGroups(newGroups);
         setCurrentGroupIndex((currentGroupIndex + 1) % groups.length);
         setInputList(prevList => prevList.filter(item => item !== selectedItem));
@@ -253,9 +271,11 @@ const FormularioTexto = () => {
                                 My Spinner
                             </Typography>
                         </Box>
+
                         <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center' }}>
                            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{headerTitle}</Typography>
                         </Box>
+
                         <Box>
                             <Tooltip title={isPanelHidden ? "Show Panel" : "Hide Panel"}>
                                 <IconButton color="primary" onClick={() => setIsPanelHidden(!isPanelHidden)}>
@@ -273,9 +293,15 @@ const FormularioTexto = () => {
 
                 <Box sx={{ display: 'flex', flexGrow: 1, p: { xs: 2, md: 4 }, gap: 4, overflow: 'auto' }}>
                     <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', p: 2 }}>
-                    <Box sx={{ width: '100%', maxWidth: '700px', aspectRatio: '1 / 1', position: 'relative', mb: 3, '& > div': { width: '100%', height: '100%', maxWidth: 'unset', maxHeight: 'unset' } }}>
-                    <Wheel mustStartSpinning={mustSpin} prizeNumber={prizeNumber} data={rouletteData.length > 0 ? rouletteData : [{ option: "Add Items" }]} onStopSpinning={handleStop} {...rouletteProps} />
-                </Box>
+                        <Typography variant="h4" sx={{ fontWeight: 700, color: 'text.secondary', mb: 2 }}>
+                            Title Spinner
+                        </Typography>
+                        <Box sx={{
+                            width: '100%', maxWidth: '700px', aspectRatio: '1 / 1', position: 'relative', mb: 3,
+                            '& > div': { width: '100%', height: '100%', maxWidth: 'unset', maxHeight: 'unset' }
+                        }}>
+                            <Wheel mustStartSpinning={mustSpin} prizeNumber={prizeNumber} data={rouletteData.length > 0 ? rouletteData : [{ option: "Add Items" }]} onStopSpinning={handleStop} {...rouletteProps} />
+                        </Box>
                         <Box sx={{ display: 'flex', gap: 2, mb: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
                             <Button variant="contained" size="large" startIcon={<BiPlayCircle />} onClick={handleSpinClick} disabled={mustSpin || inputList.length === 0 || isGameFinished}>Spin</Button>
                             <Button variant="outlined" size="large" startIcon={<BiCog />} onClick={() => setSetupDialogOpen(true)} disabled={isSetupComplete}>Setup Groups</Button>
@@ -358,7 +384,7 @@ const FormularioTexto = () => {
                 
                 <Box component="footer" sx={{ p: 2, mt: 'auto', textAlign: 'center' }}>
                     <Typography variant="body2" color="text.secondary">
-                        Elysium Spinner v2.5 FINAL
+                        Elysium Spinner v2.4 FINAL
                     </Typography>
                 </Box>
             </Box>
@@ -368,7 +394,7 @@ const FormularioTexto = () => {
 
 const rouletteProps = {
     spinDuration: 1.0,
-    transitionTimingFunction: 'ease-in-out',
+    // transitionTimingFunction: 'ease-in-out',
     outerBorderColor: "#e0e0e0", outerBorderWidth: 7,
     innerBorderColor: "#ffffff", innerBorderWidth: 7,
     innerRadius: 10,
